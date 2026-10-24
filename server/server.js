@@ -33,7 +33,7 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 
-const ROOT_DIR = __dirname;
+const ROOT_DIR = path.resolve(__dirname, '..');
 
 // Minimal zero-dependency .env loader so local users can store keys in .env outside browser storage
 function loadDotEnv(envFilePath = path.join(ROOT_DIR, '.env')) {

@@ -2,10 +2,9 @@
   "name": "uryoutube",
   "version": "3.3.1",
   "description": "Open-source, local-first, user-controlled YouTube recommendation & discovery platform with modular multi-algorithm ranking.",
-  "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
+    "start": "node server/server.js",
+    "dev": "node server/server.js",
     "build": "node tests/run_tests.js",
     "test": "node tests/run_tests.js"
   },
