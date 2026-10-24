@@ -2213,8 +2213,11 @@ ${JSON.stringify(compactList)}`;
         `Score = ${d}·Depth + ${ind}·Indie + ${lf}·LongForm + ${nov}·Novelty + ${rel}·BM25 + ${pop}·Pop − ${ac}·Clickbait + Rules`;
 
       const presetObj = PRESETS[state.activePreset];
-      document.getElementById("currentPresetBadge").textContent =
-        presetObj ? `Preset: ${presetObj.name}` : "Preset: Custom User Rules";
+      const pLabel = presetObj ? `Preset: ${presetObj.name}` : "Preset: Custom User Rules";
+      const pBadge = document.getElementById("currentPresetBadge");
+      if (pBadge) pBadge.textContent = pLabel;
+      const feedBadge = document.getElementById("feedPresetBadge");
+      if (feedBadge) feedBadge.textContent = pLabel;
 
       const apiLabel = document.getElementById("apiSourceLabel");
       const modeLabel = document.getElementById("formulaEngineMode");
@@ -2798,13 +2801,10 @@ ${JSON.stringify(compactList)}`;
 
       const tunerDrawer = document.getElementById("tunerDrawer");
       document.getElementById("toggleTunerDrawerBtn").addEventListener("click", () => {
-        tunerDrawer.classList.toggle("hidden");
-        if (!tunerDrawer.classList.contains("hidden")) {
-          tunerDrawer.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
+        setNav(state.activeNav === "studio" ? "feed" : "studio");
       });
       document.getElementById("collapseTunerBtn").addEventListener("click", () => {
-        tunerDrawer.classList.add("hidden");
+        setNav("feed");
       });
 
       const searchInput = document.getElementById("videoSearchInput");
@@ -3057,43 +3057,67 @@ ${JSON.stringify(compactList)}`;
         });
       }
 
+      function setNav(nav) {
+        state.activeNav = nav;
+        document.querySelectorAll(".nav-item").forEach(b => {
+          if (b.getAttribute("data-nav") === nav) {
+            b.classList.add("bg-yt-hover", "text-white");
+            b.classList.remove("text-zinc-400");
+          } else {
+            b.classList.remove("bg-yt-hover", "text-white");
+            b.classList.add("text-zinc-400");
+          }
+        });
+
+        const studioSection = document.getElementById("algorithmStudioSection");
+        const homeStrip = document.getElementById("homeFeedControlStrip");
+        const filterSection = document.getElementById("feedFilterChipsSection");
+        const videoGrid = document.getElementById("videoGridSection");
+        const blockedSection = document.getElementById("blockedVideosSection");
+
+        if (nav === "studio") {
+          if (studioSection) studioSection.classList.remove("hidden");
+          if (homeStrip) homeStrip.classList.add("hidden");
+          if (filterSection) filterSection.classList.add("hidden");
+          if (videoGrid) videoGrid.classList.add("hidden");
+          if (blockedSection) blockedSection.classList.add("hidden");
+          try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) {}
+        } else if (nav === "blocked") {
+          if (studioSection) studioSection.classList.add("hidden");
+          if (homeStrip) homeStrip.classList.add("hidden");
+          if (filterSection) filterSection.classList.remove("hidden");
+          if (videoGrid) videoGrid.classList.add("hidden");
+          if (blockedSection) blockedSection.classList.remove("hidden");
+          try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) {}
+        } else {
+          // default: "feed" or "saved"
+          if (studioSection) studioSection.classList.add("hidden");
+          if (homeStrip) homeStrip.classList.remove("hidden");
+          if (filterSection) filterSection.classList.remove("hidden");
+          if (videoGrid) videoGrid.classList.remove("hidden");
+          if (blockedSection) blockedSection.classList.add("hidden");
+        }
+        renderAll();
+      }
+
       document.querySelectorAll(".nav-item").forEach(btn => {
         btn.addEventListener("click", () => {
           const nav = btn.getAttribute("data-nav");
-          state.activeNav = nav;
-          document.querySelectorAll(".nav-item").forEach(b => {
-            b.classList.remove("bg-yt-hover", "text-white");
-            b.classList.add("text-zinc-400");
-          });
-          btn.classList.add("bg-yt-hover", "text-white");
-          btn.classList.remove("text-zinc-400");
-
-          if (nav === "studio") {
-            tunerDrawer.classList.remove("hidden");
-            document.getElementById("blockedVideosSection").classList.add("hidden");
-            document.getElementById("videoGridSection").classList.remove("hidden");
-            tunerDrawer.scrollIntoView({ behavior: "smooth" });
-          } else if (nav === "blocked") {
-            document.getElementById("blockedVideosSection").classList.remove("hidden");
-            document.getElementById("videoGridSection").classList.add("hidden");
-          } else {
-            document.getElementById("blockedVideosSection").classList.add("hidden");
-            document.getElementById("videoGridSection").classList.remove("hidden");
-          }
-          renderAll();
+          setNav(nav);
         });
       });
 
-      document.getElementById("viewBlockedLinkBtn").addEventListener("click", () => {
-        document.getElementById("blockedVideosSection").classList.remove("hidden");
-        document.getElementById("blockedVideosSection").scrollIntoView({ behavior: "smooth" });
-      });
-      document.getElementById("backToFeedFromBlockedBtn").addEventListener("click", () => {
-        state.activeNav = "feed";
-        document.getElementById("blockedVideosSection").classList.add("hidden");
-        document.getElementById("videoGridSection").classList.remove("hidden");
-        renderAll();
-      });
+      const openStudioBtn = document.getElementById("openStudioFromFeedBtn");
+      if (openStudioBtn) openStudioBtn.addEventListener("click", () => setNav("studio"));
+
+      const backStudioBtn = document.getElementById("backToFeedFromStudioBtn");
+      if (backStudioBtn) backStudioBtn.addEventListener("click", () => setNav("feed"));
+
+      const bottomBackBtn = document.getElementById("bottomBackToFeedBtn");
+      if (bottomBackBtn) bottomBackBtn.addEventListener("click", () => setNav("feed"));
+
+      document.getElementById("viewBlockedLinkBtn").addEventListener("click", () => setNav("blocked"));
+      document.getElementById("backToFeedFromBlockedBtn").addEventListener("click", () => setNav("feed"));
 
       document.body.addEventListener("click", e => {
         const presetBtn = e.target.closest(".preset-btn");

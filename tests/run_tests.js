@@ -903,7 +903,7 @@ function httpRequest(port, reqPath, method = 'GET', bodyStr = null, headers = {}
     const elements = new Map();
     function makeEl(id) {
       const listeners = {};
-      const classes = new Set(id.includes("Modal") || id === "blockedVideosSection" || id === "liveLoadingIndicator" || id === "clearSearchBtn" || id === "toastBanner" || id === "serverConfigStatusBanner" || id === "apiTestStatusBox" ? ["hidden"] : []);
+      const classes = new Set(id.includes("Modal") || id === "blockedVideosSection" || id === "algorithmStudioSection" || id === "liveLoadingIndicator" || id === "clearSearchBtn" || id === "toastBanner" || id === "serverConfigStatusBanner" || id === "apiTestStatusBox" ? ["hidden"] : []);
       return {
         id, value: "", checked: false, textContent: "", innerHTML: "", href: "", src: "", dataset: {},
         classList: {
@@ -1052,6 +1052,18 @@ function httpRequest(port, reqPath, method = 'GET', bodyStr = null, headers = {}
     assert.strictEqual(vm.runInNewContext('state.explorationSeed', sandbox), 0, "Wipe must reset the exploration seed");
     assert.strictEqual(getEl("ytApiKeyInput").value, "", "Wipe must clear the visible YouTube key field");
     assert.strictEqual(getEl("geminiApiKeyInput").value, "", "Wipe must clear the visible Gemini key field");
+
+    // Verify Dedicated Algorithm Studio navigation (hidden on home feed, opened via nav/button)
+    assert.strictEqual(getEl("algorithmStudioSection").classList.contains("hidden"), true, "Studio must be hidden on clean home feed");
+    assert.strictEqual(getEl("videoGridSection").classList.contains("hidden"), false, "Video grid must be visible on home feed");
+    await getEl("openStudioFromFeedBtn").trigger("click");
+    assert.strictEqual(vm.runInNewContext('state.activeNav', sandbox), "studio", "Opening studio must set activeNav to studio");
+    assert.strictEqual(getEl("algorithmStudioSection").classList.contains("hidden"), false, "Studio section must become visible");
+    assert.strictEqual(getEl("videoGridSection").classList.contains("hidden"), true, "Video grid must be hidden while in studio");
+    await getEl("backToFeedFromStudioBtn").trigger("click");
+    assert.strictEqual(vm.runInNewContext('state.activeNav', sandbox), "feed", "Returning must set activeNav back to feed");
+    assert.strictEqual(getEl("algorithmStudioSection").classList.contains("hidden"), true, "Studio section must be hidden after returning");
+    assert.strictEqual(getEl("videoGridSection").classList.contains("hidden"), false, "Video grid must be restored on feed");
   });
 
   // ---------------------------------------------------------------------------

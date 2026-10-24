@@ -248,7 +248,7 @@
 
         <button data-nav="studio" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-zinc-400 hover:bg-yt-hover hover:text-white transition">
           <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
-          <span>Algorithm Lab</span>
+          <span>Tune Algorithm &amp; Niches</span>
         </button>
 
         <button data-nav="blocked" class="nav-item w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium text-zinc-400 hover:bg-yt-hover hover:text-white transition">
@@ -298,8 +298,46 @@
     <!-- CENTER CONTENT AREA -->
     <main class="flex-1 min-w-0 p-3 sm:p-5 space-y-5">
 
-      <!-- NATURAL-LANGUAGE ALGORITHM PROMPT BAR -->
-      <section class="rounded-2xl bg-gradient-to-r from-zinc-900 via-yt-surface to-zinc-900 border border-emerald-500/30 p-4 glow-border">
+      <!-- HOME FEED TOP CONTROLS & STATUS STRIP (Visible on Home Feed) -->
+      <div id="homeFeedControlStrip" class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-zinc-900/80 border border-yt-border">
+        <div class="flex flex-wrap items-center gap-2 text-xs">
+          <span class="font-semibold text-white flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span>Your Tuned Feed</span>
+          </span>
+          <span id="feedPresetBadge" class="font-mono text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+            Preset: Deep Learner
+          </span>
+          <span class="text-zinc-500">•</span>
+          <span class="text-[11px] text-zinc-400">Tuned by your transparent rules</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="openStudioFromFeedBtn" type="button" class="px-3.5 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 text-xs font-semibold transition flex items-center gap-1.5 shadow-sm" title="Open Algorithm &amp; Niche Studio">
+            <span>🎛️</span>
+            <span>Tune Algorithm &amp; Niches</span>
+            <span class="text-[10px] text-zinc-400">→</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- DEDICATED ALGORITHM & NICHE TUNING STUDIO (Opened via sidebar 'Tune Algorithm & Niches') -->
+      <section id="algorithmStudioSection" class="hidden space-y-5">
+        <!-- Studio Header & Breadcrumb -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-zinc-900/90 border border-emerald-500/30">
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+              <span class="text-emerald-400">🎛️</span>
+              <span>Algorithm &amp; Niche Tuning Studio</span>
+            </h2>
+            <p class="text-xs text-zinc-400">Craft your custom recommendation formula, add or remove topic niches, and direct the AI discovery engine.</p>
+          </div>
+          <button id="backToFeedFromStudioBtn" type="button" class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs transition flex items-center gap-1.5 shrink-0 shadow-md">
+            <span>← Back to Tuned Feed</span>
+          </button>
+        </div>
+
+        <!-- NATURAL-LANGUAGE ALGORITHM PROMPT BAR -->
+        <section class="rounded-2xl bg-gradient-to-r from-zinc-900 via-yt-surface to-zinc-900 border border-emerald-500/30 p-4 glow-border">
         <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div class="flex-1 space-y-1">
             <div class="flex items-center justify-between gap-2 flex-wrap">
@@ -652,8 +690,17 @@
         </div>
       </section>
 
-      <!-- DYNAMIC CATEGORY FILTER CHIPS & LIVE STATUS BAR -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-yt-border pb-3">
+      <!-- Bottom Return to Feed Bar inside Algorithm Studio -->
+      <div class="flex items-center justify-between p-3.5 rounded-xl bg-zinc-900/70 border border-yt-border">
+        <button id="bottomBackToFeedBtn" type="button" class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs transition flex items-center gap-1.5 shadow-md">
+          <span>← Back to Tuned Feed &amp; Explore Videos</span>
+        </button>
+        <span class="text-xs text-zinc-400 font-mono">Changes apply to your feed in real time</span>
+      </div>
+    </section>
+
+    <!-- DYNAMIC CATEGORY FILTER CHIPS & LIVE STATUS BAR -->
+    <div id="feedFilterChipsSection" class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-yt-border pb-3">
         <div id="categoryChipsBar" class="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar"></div>
 
         <div class="flex items-center gap-2 shrink-0 text-xs text-zinc-400">
@@ -3112,8 +3159,11 @@ ${JSON.stringify(compactList)}`;
         `Score = ${d}·Depth + ${ind}·Indie + ${lf}·LongForm + ${nov}·Novelty + ${rel}·BM25 + ${pop}·Pop − ${ac}·Clickbait + Rules`;
 
       const presetObj = PRESETS[state.activePreset];
-      document.getElementById("currentPresetBadge").textContent =
-        presetObj ? `Preset: ${presetObj.name}` : "Preset: Custom User Rules";
+      const pLabel = presetObj ? `Preset: ${presetObj.name}` : "Preset: Custom User Rules";
+      const pBadge = document.getElementById("currentPresetBadge");
+      if (pBadge) pBadge.textContent = pLabel;
+      const feedBadge = document.getElementById("feedPresetBadge");
+      if (feedBadge) feedBadge.textContent = pLabel;
 
       const apiLabel = document.getElementById("apiSourceLabel");
       const modeLabel = document.getElementById("formulaEngineMode");
@@ -3697,13 +3747,10 @@ ${JSON.stringify(compactList)}`;
 
       const tunerDrawer = document.getElementById("tunerDrawer");
       document.getElementById("toggleTunerDrawerBtn").addEventListener("click", () => {
-        tunerDrawer.classList.toggle("hidden");
-        if (!tunerDrawer.classList.contains("hidden")) {
-          tunerDrawer.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
+        setNav(state.activeNav === "studio" ? "feed" : "studio");
       });
       document.getElementById("collapseTunerBtn").addEventListener("click", () => {
-        tunerDrawer.classList.add("hidden");
+        setNav("feed");
       });
 
       const searchInput = document.getElementById("videoSearchInput");
@@ -3956,43 +4003,67 @@ ${JSON.stringify(compactList)}`;
         });
       }
 
+      function setNav(nav) {
+        state.activeNav = nav;
+        document.querySelectorAll(".nav-item").forEach(b => {
+          if (b.getAttribute("data-nav") === nav) {
+            b.classList.add("bg-yt-hover", "text-white");
+            b.classList.remove("text-zinc-400");
+          } else {
+            b.classList.remove("bg-yt-hover", "text-white");
+            b.classList.add("text-zinc-400");
+          }
+        });
+
+        const studioSection = document.getElementById("algorithmStudioSection");
+        const homeStrip = document.getElementById("homeFeedControlStrip");
+        const filterSection = document.getElementById("feedFilterChipsSection");
+        const videoGrid = document.getElementById("videoGridSection");
+        const blockedSection = document.getElementById("blockedVideosSection");
+
+        if (nav === "studio") {
+          if (studioSection) studioSection.classList.remove("hidden");
+          if (homeStrip) homeStrip.classList.add("hidden");
+          if (filterSection) filterSection.classList.add("hidden");
+          if (videoGrid) videoGrid.classList.add("hidden");
+          if (blockedSection) blockedSection.classList.add("hidden");
+          try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) {}
+        } else if (nav === "blocked") {
+          if (studioSection) studioSection.classList.add("hidden");
+          if (homeStrip) homeStrip.classList.add("hidden");
+          if (filterSection) filterSection.classList.remove("hidden");
+          if (videoGrid) videoGrid.classList.add("hidden");
+          if (blockedSection) blockedSection.classList.remove("hidden");
+          try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) {}
+        } else {
+          // default: "feed" or "saved"
+          if (studioSection) studioSection.classList.add("hidden");
+          if (homeStrip) homeStrip.classList.remove("hidden");
+          if (filterSection) filterSection.classList.remove("hidden");
+          if (videoGrid) videoGrid.classList.remove("hidden");
+          if (blockedSection) blockedSection.classList.add("hidden");
+        }
+        renderAll();
+      }
+
       document.querySelectorAll(".nav-item").forEach(btn => {
         btn.addEventListener("click", () => {
           const nav = btn.getAttribute("data-nav");
-          state.activeNav = nav;
-          document.querySelectorAll(".nav-item").forEach(b => {
-            b.classList.remove("bg-yt-hover", "text-white");
-            b.classList.add("text-zinc-400");
-          });
-          btn.classList.add("bg-yt-hover", "text-white");
-          btn.classList.remove("text-zinc-400");
-
-          if (nav === "studio") {
-            tunerDrawer.classList.remove("hidden");
-            document.getElementById("blockedVideosSection").classList.add("hidden");
-            document.getElementById("videoGridSection").classList.remove("hidden");
-            tunerDrawer.scrollIntoView({ behavior: "smooth" });
-          } else if (nav === "blocked") {
-            document.getElementById("blockedVideosSection").classList.remove("hidden");
-            document.getElementById("videoGridSection").classList.add("hidden");
-          } else {
-            document.getElementById("blockedVideosSection").classList.add("hidden");
-            document.getElementById("videoGridSection").classList.remove("hidden");
-          }
-          renderAll();
+          setNav(nav);
         });
       });
 
-      document.getElementById("viewBlockedLinkBtn").addEventListener("click", () => {
-        document.getElementById("blockedVideosSection").classList.remove("hidden");
-        document.getElementById("blockedVideosSection").scrollIntoView({ behavior: "smooth" });
-      });
-      document.getElementById("backToFeedFromBlockedBtn").addEventListener("click", () => {
-        state.activeNav = "feed";
-        document.getElementById("blockedVideosSection").classList.add("hidden");
-        document.getElementById("videoGridSection").classList.remove("hidden");
-        renderAll();
-      });
+      const openStudioBtn = document.getElementById("openStudioFromFeedBtn");
+      if (openStudioBtn) openStudioBtn.addEventListener("click", () => setNav("studio"));
+
+      const backStudioBtn = document.getElementById("backToFeedFromStudioBtn");
+      if (backStudioBtn) backStudioBtn.addEventListener("click", () => setNav("feed"));
+
+      const bottomBackBtn = document.getElementById("bottomBackToFeedBtn");
+      if (bottomBackBtn) bottomBackBtn.addEventListener("click", () => setNav("feed"));
+
+      document.getElementById("viewBlockedLinkBtn").addEventListener("click", () => setNav("blocked"));
+      document.getElementById("backToFeedFromBlockedBtn").addEventListener("click", () => setNav("feed"));
 
       document.body.addEventListener("click", e => {
         const presetBtn = e.target.closest(".preset-btn");
