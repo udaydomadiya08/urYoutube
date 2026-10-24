@@ -1,0 +1,26 @@
+{
+  "name": "uryoutube",
+  "version": "3.3.1",
+  "description": "Open-source, local-first, user-controlled YouTube recommendation & discovery platform with modular multi-algorithm ranking.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node tests/run_tests.js"
+  },
+  "keywords": [
+    "youtube",
+    "recommendation-system",
+    "information-retrieval",
+    "algorithmic-transparency",
+    "mmr-diversity",
+    "open-algorithm",
+    "digital-wellbeing",
+    "uryoutube"
+  ],
+  "author": "urYouTube Open-Source Contributors",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

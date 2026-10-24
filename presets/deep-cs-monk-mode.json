@@ -1,0 +1,22 @@
+{
+  "platform": "urYouTube Open-Source Algorithm Profile",
+  "version": "3.0.0",
+  "name": "Deep CS & Systems Monk Mode",
+  "activePromptText": "Only rigorous computer science, distributed systems, and quantum physics lectures over 10 mins, zero clickbait or shorts",
+  "weights": {
+    "depth": 96,
+    "antiClickbait": 98,
+    "indie": 75,
+    "longForm": 90,
+    "novelty": 70,
+    "minDurationMin": 10,
+    "blockShorts": true,
+    "hideOutrage": true
+  },
+  "topicPrefs": {
+    "cs-math": 1,
+    "ai-systems": 1,
+    "science": 1,
+    "viral-hype": -1
+  }
+}

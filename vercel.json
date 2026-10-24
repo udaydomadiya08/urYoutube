@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "cleanUrls": true,
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" },
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' https://i.ytimg.com data:; frame-src https://www.youtube-nocookie.com https://www.youtube.com; connect-src 'self' https://www.googleapis.com https://generativelanguage.googleapis.com https://pipedapi.kavin.rocks https://pipedapi.tokhmi.xyz https://pipedapi.moomoo.me https://pipedapi.syncpundit.io https://api.piped.private.coffee https://pipedapi.drgns.space https://pipedapi.ducks.party https://inv.tux.pizza https://invidious.nerdvpn.de https://invidious.privacyredirect.com https://vid.puffyan.us https://yewtu.be https://inv.nadeko.net https://api.allorigins.win; object-src 'none'; base-uri 'self'; frame-ancestors 'self'" }
+      ]
+    }
+  ]
+}

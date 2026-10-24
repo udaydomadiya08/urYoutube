@@ -1,0 +1,21 @@
+{
+  "platform": "urYouTube Open-Source Algorithm Profile",
+  "version": "3.0.0",
+  "name": "Indie Maker & Homelab Explorer",
+  "activePromptText": "Boost small indie hardware builds, homelab servers, robotics, and architectural video essays; block viral drama",
+  "weights": {
+    "depth": 82,
+    "antiClickbait": 90,
+    "indie": 99,
+    "longForm": 70,
+    "novelty": 95,
+    "minDurationMin": 5,
+    "blockShorts": true,
+    "hideOutrage": true
+  },
+  "topicPrefs": {
+    "indie-tech": 1,
+    "essays-arch": 1,
+    "viral-hype": -1
+  }
+}
