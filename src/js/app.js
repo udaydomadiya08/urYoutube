@@ -2276,8 +2276,7 @@ ${JSON.stringify(compactList)}`;
         `;
       }).join("");
 
-      const topicContainer = document.getElementById("topicMatrixContainer");
-      topicContainer.innerHTML = TOPICS.map(t => {
+      const topicPillsHtml = TOPICS.map(t => {
         const val = state.topicPrefs[t.id] || 0;
         let badgeStyle = "bg-zinc-900 border-zinc-700 text-zinc-300 hover:border-zinc-500";
         let prefix = "•";
@@ -2301,13 +2300,19 @@ ${JSON.stringify(compactList)}`;
             <button
               data-remove-topic="${escapeHtml(t.id)}"
               class="remove-topic-btn pr-2 pl-1 py-1 text-zinc-500 hover:text-rose-400 focus:outline-none"
-              title="Delete topic from list"
+              title="Delete niche from list"
             >
               ×
             </button>
           </div>
         `;
       }).join("");
+
+      const topicContainer = document.getElementById("topicMatrixContainer");
+      if (topicContainer) topicContainer.innerHTML = topicPillsHtml;
+
+      const topNicheContainer = document.getElementById("topNicheMatrixContainer");
+      if (topNicheContainer) topNicheContainer.innerHTML = topicPillsHtml;
 
       const creatorContainer = document.getElementById("creatorMatrixContainer");
       if (creatorContainer && state.creatorPrefs) {
@@ -2976,51 +2981,26 @@ ${JSON.stringify(compactList)}`;
         }
       }
 
-      // Manual YouTube URL / Video ID Entry Wiring
-      const toggleManualBtn = document.getElementById("toggleManualVideoBarBtn");
-      const manualSection = document.getElementById("manualVideoFormSection");
-      if (toggleManualBtn && manualSection) {
-        toggleManualBtn.addEventListener("click", () => {
-          manualSection.classList.toggle("hidden");
+      // Top-level Niche & Topic Studio Wiring
+      const toggleNicheBtn = document.getElementById("toggleNicheManagerBtn");
+      const nicheSection = document.getElementById("nicheManagerSection");
+      if (toggleNicheBtn && nicheSection) {
+        toggleNicheBtn.addEventListener("click", () => {
+          nicheSection.classList.toggle("hidden");
         });
       }
-      const addManualBtn = document.getElementById("addManualVideoSubmitBtn");
-      if (addManualBtn) {
-        addManualBtn.addEventListener("click", () => {
-          const rawUrlOrId = (document.getElementById("manualVideoUrlInput").value || "").trim();
-          const vidId = extractYoutubeVideoId(rawUrlOrId);
-          if (!vidId) {
-            showToast("Invalid YouTube URL or 11-character Video ID.");
-            return;
-          }
-          const rawTitle = (document.getElementById("manualVideoTitleInput").value || "").trim() || `User Added Video (${vidId})`;
-          const rawChannel = (document.getElementById("manualVideoChannelInput").value || "").trim() || "User Added Creator";
-          const rawMins = Math.max(1, Math.min(600, parseInt(document.getElementById("manualVideoDurationInput").value || "20", 10) || 20));
-          const durationSec = rawMins * 60;
-          const sigs = computeHeuristicSignalsForVideo(rawTitle, rawChannel, durationSec, 50000, "User Added", "cs-math");
-          const newVideo = {
-            id: vidId,
-            title: rawTitle,
-            channel: rawChannel,
-            subscribers: "Local Entry",
-            views: 50000,
-            durationSec,
-            durationText: formatDurationSec(durationSec),
-            category: "User Added",
-            topics: ["cs-math", "user-added"],
-            ...sigs,
-            isUserAdded: true,
-            isSampleData: false,
-            isLiveFetched: false,
-            dataOrigin: "user_added",
-            summary: `Manually added via local URL/ID entry (${vidId}).`
-          };
-          VIDEOS = [newVideo, ...VIDEOS.filter(v => v.id !== vidId)];
-          document.getElementById("manualVideoUrlInput").value = "";
-          document.getElementById("manualVideoTitleInput").value = "";
-          document.getElementById("manualVideoChannelInput").value = "";
-          renderAll();
-          showToast(`Added "${rawTitle}" (${vidId}) to your local feed!`);
+      const quickNicheInput = document.getElementById("quickNicheInput");
+      const quickAddNicheBtn = document.getElementById("quickAddNicheBtn");
+      if (quickAddNicheBtn && quickNicheInput) {
+        const handleAddQuickNiche = () => {
+          const val = (quickNicheInput.value || "").trim();
+          if (!val) return;
+          addCustomTopicAndFetch(val);
+          quickNicheInput.value = "";
+        };
+        quickAddNicheBtn.addEventListener("click", handleAddQuickNiche);
+        quickNicheInput.addEventListener("keydown", e => {
+          if (e.key === "Enter") handleAddQuickNiche();
         });
       }
 

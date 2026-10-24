@@ -925,6 +925,8 @@ function httpRequest(port, reqPath, method = 'GET', bodyStr = null, headers = {}
     const sessionStore = new Map();
     const localStore = new Map();
     const windowListeners = {};
+    const docListeners = {};
+    const bodyListeners = {};
     const sandbox = {
       window: {
         location: { protocol: "file:", origin: "null" },
@@ -934,9 +936,13 @@ function httpRequest(port, reqPath, method = 'GET', bodyStr = null, headers = {}
       document: {
         getElementById: getEl,
         querySelectorAll: () => [],
-        addEventListener: () => {},
+        addEventListener: (ev, fn) => { docListeners[ev] = docListeners[ev] || []; docListeners[ev].push(fn); },
         createElement: () => makeEl("dynamic"),
-        body: { appendChild: () => {}, removeChild: () => {}, addEventListener: () => {} },
+        body: {
+          appendChild: () => {},
+          removeChild: () => {},
+          addEventListener: (ev, fn) => { bodyListeners[ev] = bodyListeners[ev] || []; bodyListeners[ev].push(fn); }
+        },
         execCommand: () => true
       },
       localStorage: {
@@ -958,6 +964,7 @@ function httpRequest(port, reqPath, method = 'GET', bodyStr = null, headers = {}
       Math, Number, String, Boolean, Array, Object, Set, Map, JSON, RegExp, Date, Error, Promise, parseInt, parseFloat, isNaN, isFinite, encodeURIComponent, decodeURIComponent
     };
     sandbox.window.document = sandbox.document;
+    sandbox.document.body.ownerDocument = sandbox.document;
     vm.runInNewContext(appCode, sandbox);
     for (const fn of (windowListeners["DOMContentLoaded"] || [])) fn();
 
@@ -1011,19 +1018,29 @@ function httpRequest(port, reqPath, method = 'GET', bodyStr = null, headers = {}
     // Verify Sample Demo badge is rendered on initial sample data and can be toggled off
     assert.ok(getEl("videoGridContainer").innerHTML.includes("📦 Sample Demo"), "Sample demonstration videos must be labeled with Sample Demo badge");
 
-    // Verify Manual YouTube URL entry adds a user video locally without API keys
-    getEl("manualVideoUrlInput").value = "https://youtu.be/dQw4w9WgXcQ";
-    getEl("manualVideoTitleInput").value = "Custom Local Test Lecture";
-    getEl("manualVideoChannelInput").value = "Local Scholar";
-    getEl("manualVideoDurationInput").value = "30";
-    await getEl("addManualVideoSubmitBtn").trigger("click");
-    assert.ok(getEl("videoGridContainer").innerHTML.includes("Custom Local Test Lecture"), "Manually added YouTube URL must appear in feed");
-    assert.ok(getEl("videoGridContainer").innerHTML.includes("📌 User Added"), "Manually added video must display User Added badge");
+    // Verify Niche & Topic Studio: adding custom niche, rendering pills, and removing niche
+    getEl("quickNicheInput").value = "Distributed Systems";
+    await getEl("quickAddNicheBtn").trigger("click");
+    assert.ok(getEl("topNicheMatrixContainer").innerHTML.includes("Distributed Systems"), "Added niche must appear in top niche container");
+    assert.ok(getEl("topicMatrixContainer").innerHTML.includes("Distributed Systems"), "Added niche must sync to topic matrix container");
+    const addedNiche = vm.runInNewContext('TOPICS.find(t => t.label === "Distributed Systems")', sandbox);
+    assert.ok(addedNiche, "Added niche must be registered in TOPICS");
 
-    // Verify hiding Sample Demo Data leaves only the user-added video
+    // Verify removing custom niche via delete button (delegated on document.body)
+    for (const fn of (bodyListeners["click"] || [])) {
+      fn({
+        target: {
+          closest: sel => sel === ".remove-topic-btn" ? { getAttribute: () => addedNiche.id } : null
+        },
+        stopPropagation: () => {}
+      });
+    }
+    assert.strictEqual(vm.runInNewContext('TOPICS.some(t => t.label === "Distributed Systems")', sandbox), false, "Clicking remove button must delete niche from TOPICS");
+
+    // Verify toggling showSampleDataCheckbox hides demo data
     getEl("showSampleDataCheckbox").checked = false;
     await getEl("showSampleDataCheckbox").trigger("change", { target: { checked: false } });
-    assert.strictEqual(Number(getEl("visibleVideoCount").textContent), 1, "Unchecking showSampleData must hide sample demo videos and leave only user-added video");
+    assert.strictEqual(Number(getEl("visibleVideoCount").textContent), 0, "Unchecking showSampleData with no live videos must yield 0 visible videos");
 
     // Verify Wipe All Local Data resets state cleanly
     await getEl("wipeAllLocalDataBtn").trigger("click");
