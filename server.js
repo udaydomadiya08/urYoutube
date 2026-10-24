@@ -33,7 +33,7 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 
-const ROOT_DIR = path.resolve(__dirname, '..');
+const ROOT_DIR = __dirname;
 
 // Minimal zero-dependency .env loader so local users can store keys in .env outside browser storage
 function loadDotEnv(envFilePath = path.join(ROOT_DIR, '.env')) {
@@ -437,112 +437,118 @@ async function handleGeminiProxy(req, res, clientIp = getClientIp(req)) {
   }
 }
 
-function createAppServer() {
-  return http.createServer(async (req, res) => {
-    setSecurityHeaders(res);
+const requestListener = async (req, res) => {
+  setSecurityHeaders(res);
 
-    let parsedUrl;
-    try {
-      parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-    } catch (err) {
-      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ error: 'Bad Request URL' }));
+  let parsedUrl;
+  try {
+    const host = req.headers && (req.headers['x-forwarded-host'] || req.headers.host) || 'localhost';
+    const proto = req.headers && req.headers['x-forwarded-proto'] || 'http';
+    parsedUrl = new URL(req.url || '/', `${proto}://${host}`);
+  } catch (err) {
+    res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'Bad Request URL' }));
+    return;
+  }
+
+  const clientIp = getClientIp(req);
+
+  // API Endpoints
+  if (parsedUrl.pathname === '/api/gemini-proxy') {
+    await handleGeminiProxy(req, res, clientIp);
+    return;
+  }
+
+  if (parsedUrl.pathname === '/api/health') {
+    handleHealth(req, res);
+    return;
+  }
+
+  if (parsedUrl.pathname === '/api/config-status') {
+    handleConfigStatus(req, res);
+    return;
+  }
+
+  if (parsedUrl.pathname === '/api/youtube-search') {
+    await handleYoutubeSearch(req, res, parsedUrl, clientIp);
+    return;
+  }
+
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'Method Not Allowed' }));
+    return;
+  }
+
+  // Static File Serving with Strict Path Traversal & Dotfile Protection
+  let decodedPathname;
+  try {
+    decodedPathname = decodeURIComponent(parsedUrl.pathname);
+  } catch (e) {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('400 Bad Request');
+    return;
+  }
+
+  if (decodedPathname.includes('\0')) {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('400 Bad Request');
+    return;
+  }
+
+  if (decodedPathname === '/' || decodedPathname === '' || decodedPathname === '/index') {
+    decodedPathname = '/index.html';
+  } else if (decodedPathname === '/uryoutube') {
+    decodedPathname = '/uryoutube.html';
+  }
+
+  const segments = decodedPathname.split('/').filter(Boolean);
+  if (segments.some(seg => seg.startsWith('.') || seg === '..')) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('403 Forbidden');
+    return;
+  }
+
+  const resolvedPath = path.resolve(ROOT_DIR, '.' + decodedPathname);
+  if (!resolvedPath.startsWith(ROOT_DIR + path.sep) && resolvedPath !== path.join(ROOT_DIR, 'index.html')) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('403 Forbidden');
+    return;
+  }
+
+  const ext = path.extname(resolvedPath).toLowerCase();
+  const contentType = ALLOWED_STATIC_EXTENSIONS[ext];
+  if (!contentType) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('403 Forbidden file type');
+    return;
+  }
+
+  fs.stat(resolvedPath, (statErr, stats) => {
+    if (statErr || !stats.isFile()) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('404 Not Found');
       return;
     }
 
-    const clientIp = getClientIp(req);
-
-    // API Endpoints
-    if (parsedUrl.pathname === '/api/gemini-proxy') {
-      await handleGeminiProxy(req, res, clientIp);
+    res.writeHead(200, { 'Content-Type': contentType });
+    if (req.method === 'HEAD') {
+      res.end();
       return;
     }
-
-    if (parsedUrl.pathname === '/api/health') {
-      handleHealth(req, res);
-      return;
-    }
-
-    if (parsedUrl.pathname === '/api/config-status') {
-      handleConfigStatus(req, res);
-      return;
-    }
-
-    if (parsedUrl.pathname === '/api/youtube-search') {
-      await handleYoutubeSearch(req, res, parsedUrl, clientIp);
-      return;
-    }
-
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ error: 'Method Not Allowed' }));
-      return;
-    }
-
-    // 4. Static File Serving with Strict Path Traversal & Dotfile Protection
-    let decodedPathname;
-    try {
-      decodedPathname = decodeURIComponent(parsedUrl.pathname);
-    } catch (e) {
-      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('400 Bad Request');
-      return;
-    }
-
-    if (decodedPathname.includes('\0')) {
-      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('400 Bad Request');
-      return;
-    }
-
-    if (decodedPathname === '/' || decodedPathname === '') {
-      decodedPathname = '/index.html';
-    }
-
-    const segments = decodedPathname.split('/').filter(Boolean);
-    if (segments.some(seg => seg.startsWith('.') || seg === '..')) {
-      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('403 Forbidden');
-      return;
-    }
-
-    const resolvedPath = path.resolve(ROOT_DIR, '.' + decodedPathname);
-    if (!resolvedPath.startsWith(ROOT_DIR + path.sep) && resolvedPath !== path.join(ROOT_DIR, 'index.html')) {
-      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('403 Forbidden');
-      return;
-    }
-
-    const ext = path.extname(resolvedPath).toLowerCase();
-    const contentType = ALLOWED_STATIC_EXTENSIONS[ext];
-    if (!contentType) {
-      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('403 Forbidden file type');
-      return;
-    }
-
-    fs.stat(resolvedPath, (statErr, stats) => {
-      if (statErr || !stats.isFile()) {
-        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end('404 Not Found');
-        return;
+    const stream = fs.createReadStream(resolvedPath);
+    stream.on('error', () => {
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
       }
-
-      res.writeHead(200, { 'Content-Type': contentType });
-      if (req.method === 'HEAD') {
-        res.end();
-        return;
-      }
-      const stream = fs.createReadStream(resolvedPath);
-      stream.on('error', () => {
-        if (!res.headersSent) {
-          res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
-        }
-        res.end('500 Internal Server Error');
-      });
-      stream.pipe(res);
+      res.end('500 Internal Server Error');
     });
+    stream.pipe(res);
   });
+};
+
+function createAppServer() {
+  return http.createServer(requestListener);
 }
 
 if (require.main === module) {
@@ -562,7 +568,8 @@ if (require.main === module) {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
-module.exports = {
+module.exports = requestListener;
+Object.assign(module.exports, {
   createAppServer,
   checkRateLimit,
   rateLimitMap,
@@ -576,4 +583,5 @@ module.exports = {
   handleConfigStatus,
   handleYoutubeSearch,
   handleGeminiProxy
-};
+});
+

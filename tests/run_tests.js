@@ -36,7 +36,7 @@ const { performance } = require('perf_hooks');
 
 const Engine = require('../src/js/recommendation-engine.js');
 const Providers = require('../src/js/provider-adapters.js');
-const { createAppServer, rateLimitMap, CSP_HEADER_VALUE, fetchAllowlistedJson } = require('../server/server.js');
+const { createAppServer, rateLimitMap, CSP_HEADER_VALUE, fetchAllowlistedJson } = require('../server.js');
 
 const results = [];
 let passedCount = 0;
