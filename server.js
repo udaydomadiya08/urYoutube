@@ -244,6 +244,199 @@ function readRequestBody(req, maxBytes = MAX_POST_BODY_BYTES) {
   });
 }
 
+function getClientIp(req) {
+  const forwarded = req && req.headers && req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string' && forwarded) {
+    return forwarded.split(',')[0].trim();
+  }
+  return (req && req.socket && req.socket.remoteAddress) || '127.0.0.1';
+}
+
+async function parseRequestBody(req, maxBytes = MAX_POST_BODY_BYTES) {
+  if (req && req.body !== undefined && req.body !== null) {
+    if (typeof req.body === 'object') {
+      return req.body;
+    }
+    if (typeof req.body === 'string') {
+      if (Buffer.byteLength(req.body, 'utf8') > maxBytes) {
+        throw new Error('PAYLOAD_TOO_LARGE');
+      }
+      return JSON.parse(req.body);
+    }
+  }
+  const rawBody = await readRequestBody(req, maxBytes);
+  return JSON.parse(rawBody);
+}
+
+// 1. Health Check Handler
+function handleHealth(req, res) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'Method Not Allowed' }));
+    return;
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(
+    JSON.stringify({
+      status: 'ok',
+      service: 'uryoutube',
+      version: '3.3.1',
+      uptimeSec: Math.round(process.uptime())
+    })
+  );
+}
+
+// 2. Server-Side Configuration Status Handler (Never exposes raw API keys)
+function handleConfigStatus(req, res) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'Method Not Allowed' }));
+    return;
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(
+    JSON.stringify({
+      serverYoutubeKeyConfigured: Boolean((process.env.YOUTUBE_API_KEY || '').trim()),
+      serverGeminiKeyConfigured: Boolean((process.env.GEMINI_API_KEY || '').trim()),
+      storageRecommendation: 'Prefer server-side .env keys or session-only storage over persistent localStorage on shared machines.'
+    })
+  );
+}
+
+// 3. Allowlisted YouTube Search Proxy Handler
+async function handleYoutubeSearch(req, res, parsedUrl, clientIp = getClientIp(req)) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'Method Not Allowed' }));
+    return;
+  }
+
+  const rl = checkRateLimit(clientIp);
+  res.setHeader('X-RateLimit-Remaining', String(rl.remaining));
+  if (!rl.allowed) {
+    res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'Rate limit exceeded. Try again in 60 seconds.', category: 'QUOTA_EXCEEDED' }));
+    return;
+  }
+
+  // Reject any attempt to pass a custom upstream URL parameter (SSRF guard)
+  if (parsedUrl.searchParams.has('url') || parsedUrl.searchParams.has('target') || parsedUrl.searchParams.has('host')) {
+    res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'Custom upstream URLs are forbidden (SSRF protection).' }));
+    return;
+  }
+
+  const rawQ = (parsedUrl.searchParams.get('q') || '').trim();
+  if (!rawQ || rawQ.length > 140) {
+    res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'Query parameter "q" must be 1..140 characters.' }));
+    return;
+  }
+
+  // Bound the entire search request so dead DNS/providers cannot stall the UI.
+  const searchDeadline = Date.now() + 3500;
+
+  // Path A: Use server-configured YOUTUBE_API_KEY if present in environment
+  const serverYtKey = (process.env.YOUTUBE_API_KEY || '').trim();
+  if (serverYtKey) {
+    try {
+      const ytSearchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=12&q=${encodeURIComponent(rawQ)}&key=${encodeURIComponent(serverYtKey)}`;
+      const officialBudget = Math.max(1, Math.min(1800, searchDeadline - Date.now()));
+      const searchData = await fetchAllowlistedJson(ytSearchUrl, { timeout: officialBudget });
+      if (searchData && Array.isArray(searchData.items)) {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ source: 'server_youtube_api_v3', items: searchData.items }));
+        return;
+      }
+    } catch (err) {
+      // Fall through to allowlisted Piped/Invidious mirrors if official key fails
+    }
+  }
+
+  // Path B: Query allowlisted HTTPS Piped & Invidious mirrors within the remaining budget.
+  for (const buildUrl of ALLOWED_UPSTREAM_SEARCH_BUILDERS) {
+    const remainingBudget = searchDeadline - Date.now();
+    if (remainingBudget <= 0) break;
+    try {
+      const data = await fetchAllowlistedJson(buildUrl(rawQ), { timeout: Math.min(1500, remainingBudget) });
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(data));
+      return;
+    } catch (err) {
+      // Try next allowlisted mirror
+    }
+  }
+
+  res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(
+    JSON.stringify({
+      error: 'Public YouTube mirrors are currently unreachable from this network.',
+      category: 'UPSTREAM_UNAVAILABLE'
+    })
+  );
+}
+
+// 4. Gemini Proxy Handler
+async function handleGeminiProxy(req, res, clientIp = getClientIp(req)) {
+  if (req.method !== 'POST') {
+    res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'Method Not Allowed (use POST)' }));
+    return;
+  }
+  const rl = checkRateLimit(clientIp);
+  res.setHeader('X-RateLimit-Remaining', String(rl.remaining));
+  if (!rl.allowed) {
+    res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'Rate limit exceeded.', category: 'QUOTA_EXCEEDED' }));
+    return;
+  }
+
+  const serverGeminiKey = (process.env.GEMINI_API_KEY || '').trim();
+  if (!serverGeminiKey) {
+    res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'Server-side GEMINI_API_KEY is not configured in .env.', category: 'MISSING_CREDENTIALS' }));
+    return;
+  }
+
+  let parsedBody;
+  try {
+    parsedBody = await parseRequestBody(req, MAX_POST_BODY_BYTES);
+  } catch (e) {
+    const status = e.message === 'PAYLOAD_TOO_LARGE' ? 413 : 400;
+    const msg = e.message === 'PAYLOAD_TOO_LARGE'
+      ? 'Request payload exceeds 32KB limit or is unreadable.'
+      : 'Invalid JSON body.';
+    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: msg }));
+    return;
+  }
+
+  const promptText = typeof parsedBody.prompt === 'string' ? parsedBody.prompt.trim().slice(0, 8000) : '';
+  if (!promptText) {
+    res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'Missing "prompt" string in request body.' }));
+    return;
+  }
+
+  try {
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(serverGeminiKey)}`;
+    const upstreamData = await fetchAllowlistedJson(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: promptText }] }],
+        generationConfig: { responseMimeType: 'application/json' }
+      }),
+      timeout: 8000
+    });
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(upstreamData));
+  } catch (err) {
+    res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'Upstream Gemini request failed.', category: 'UPSTREAM_UNAVAILABLE' }));
+  }
+}
+
 function createAppServer() {
   return http.createServer(async (req, res) => {
     setSecurityHeaders(res);
@@ -257,174 +450,32 @@ function createAppServer() {
       return;
     }
 
-    const clientIp = req.socket.remoteAddress || '127.0.0.1';
+    const clientIp = getClientIp(req);
 
-    // Allow POST only on /api/gemini-proxy; all other endpoints require GET or HEAD
+    // API Endpoints
     if (parsedUrl.pathname === '/api/gemini-proxy') {
-      if (req.method !== 'POST') {
-        res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: 'Method Not Allowed (use POST)' }));
-        return;
-      }
-      const rl = checkRateLimit(clientIp);
-      res.setHeader('X-RateLimit-Remaining', String(rl.remaining));
-      if (!rl.allowed) {
-        res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: 'Rate limit exceeded.', category: 'QUOTA_EXCEEDED' }));
-        return;
-      }
+      await handleGeminiProxy(req, res, clientIp);
+      return;
+    }
 
-      const serverGeminiKey = (process.env.GEMINI_API_KEY || '').trim();
-      if (!serverGeminiKey) {
-        res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: 'Server-side GEMINI_API_KEY is not configured in .env.', category: 'MISSING_CREDENTIALS' }));
-        return;
-      }
+    if (parsedUrl.pathname === '/api/health') {
+      handleHealth(req, res);
+      return;
+    }
 
-      let rawBody;
-      try {
-        rawBody = await readRequestBody(req, MAX_POST_BODY_BYTES);
-      } catch (e) {
-        const status = e.message === 'PAYLOAD_TOO_LARGE' ? 413 : 400;
-        res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: 'Request payload exceeds 32KB limit or is unreadable.' }));
-        return;
-      }
+    if (parsedUrl.pathname === '/api/config-status') {
+      handleConfigStatus(req, res);
+      return;
+    }
 
-      let parsedBody;
-      try {
-        parsedBody = JSON.parse(rawBody);
-      } catch (e) {
-        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: 'Invalid JSON body.' }));
-        return;
-      }
-
-      const promptText = typeof parsedBody.prompt === 'string' ? parsedBody.prompt.trim().slice(0, 8000) : '';
-      if (!promptText) {
-        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: 'Missing "prompt" string in request body.' }));
-        return;
-      }
-
-      try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(serverGeminiKey)}`;
-        const upstreamData = await fetchAllowlistedJson(geminiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: promptText }] }],
-            generationConfig: { responseMimeType: 'application/json' }
-          }),
-          timeout: 8000
-        });
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify(upstreamData));
-      } catch (err) {
-        res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: 'Upstream Gemini request failed.', category: 'UPSTREAM_UNAVAILABLE' }));
-      }
+    if (parsedUrl.pathname === '/api/youtube-search') {
+      await handleYoutubeSearch(req, res, parsedUrl, clientIp);
       return;
     }
 
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: 'Method Not Allowed' }));
-      return;
-    }
-
-    // 1. Health Check Endpoint
-    if (parsedUrl.pathname === '/api/health') {
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(
-        JSON.stringify({
-          status: 'ok',
-          service: 'uryoutube',
-          version: '3.3.1',
-          uptimeSec: Math.round(process.uptime())
-        })
-      );
-      return;
-    }
-
-    // 2. Server-Side Configuration Status Endpoint (Never exposes raw API keys)
-    if (parsedUrl.pathname === '/api/config-status') {
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(
-        JSON.stringify({
-          serverYoutubeKeyConfigured: Boolean((process.env.YOUTUBE_API_KEY || '').trim()),
-          serverGeminiKeyConfigured: Boolean((process.env.GEMINI_API_KEY || '').trim()),
-          storageRecommendation: 'Prefer server-side .env keys or session-only storage over persistent localStorage on shared machines.'
-        })
-      );
-      return;
-    }
-
-    // 3. Allowlisted YouTube Search Proxy Endpoint
-    if (parsedUrl.pathname === '/api/youtube-search') {
-      const rl = checkRateLimit(clientIp);
-      res.setHeader('X-RateLimit-Remaining', String(rl.remaining));
-      if (!rl.allowed) {
-        res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: 'Rate limit exceeded. Try again in 60 seconds.', category: 'QUOTA_EXCEEDED' }));
-        return;
-      }
-
-      // Reject any attempt to pass a custom upstream URL parameter (SSRF guard)
-      if (parsedUrl.searchParams.has('url') || parsedUrl.searchParams.has('target') || parsedUrl.searchParams.has('host')) {
-        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: 'Custom upstream URLs are forbidden (SSRF protection).' }));
-        return;
-      }
-
-      const rawQ = (parsedUrl.searchParams.get('q') || '').trim();
-      if (!rawQ || rawQ.length > 140) {
-        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: 'Query parameter "q" must be 1..140 characters.' }));
-        return;
-      }
-
-      // Bound the entire search request so dead DNS/providers cannot stall the UI.
-      const searchDeadline = Date.now() + 3500;
-
-      // Path A: Use server-configured YOUTUBE_API_KEY if present in .env / environment
-      const serverYtKey = (process.env.YOUTUBE_API_KEY || '').trim();
-      if (serverYtKey) {
-        try {
-          const ytSearchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=12&q=${encodeURIComponent(rawQ)}&key=${encodeURIComponent(serverYtKey)}`;
-          const officialBudget = Math.max(1, Math.min(1800, searchDeadline - Date.now()));
-          const searchData = await fetchAllowlistedJson(ytSearchUrl, { timeout: officialBudget });
-          if (searchData && Array.isArray(searchData.items)) {
-            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-            res.end(JSON.stringify({ source: 'server_youtube_api_v3', items: searchData.items }));
-            return;
-          }
-        } catch (err) {
-          // Fall through to allowlisted Piped/Invidious mirrors if official key fails
-        }
-      }
-
-      // Path B: Query allowlisted HTTPS Piped & Invidious mirrors within the remaining budget.
-      for (const buildUrl of ALLOWED_UPSTREAM_SEARCH_BUILDERS) {
-        const remainingBudget = searchDeadline - Date.now();
-        if (remainingBudget <= 0) break;
-        try {
-          const data = await fetchAllowlistedJson(buildUrl(rawQ), { timeout: Math.min(1500, remainingBudget) });
-          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-          res.end(JSON.stringify(data));
-          return;
-        } catch (err) {
-          // Try next allowlisted mirror
-        }
-      }
-
-      res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(
-        JSON.stringify({
-          error: 'Public YouTube mirrors are currently unreachable from this network.',
-          category: 'UPSTREAM_UNAVAILABLE'
-        })
-      );
       return;
     }
 
@@ -511,4 +562,18 @@ if (require.main === module) {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
-module.exports = { createAppServer, checkRateLimit, rateLimitMap, CSP_HEADER_VALUE, loadDotEnv, fetchAllowlistedJson };
+module.exports = {
+  createAppServer,
+  checkRateLimit,
+  rateLimitMap,
+  CSP_HEADER_VALUE,
+  setSecurityHeaders,
+  getClientIp,
+  parseRequestBody,
+  loadDotEnv,
+  fetchAllowlistedJson,
+  handleHealth,
+  handleConfigStatus,
+  handleYoutubeSearch,
+  handleGeminiProxy
+};

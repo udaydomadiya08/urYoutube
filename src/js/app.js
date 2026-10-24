@@ -1014,13 +1014,15 @@
     }
 
     function parseIsoDuration(iso) {
-      if (!iso) return 600;
-      const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-      if (!m) return 600;
+      if (typeof iso !== "string" || !iso) return null;
+      if (iso === "P0D") return 0;
+      const m = iso.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+      if (!m) return null;
       const h = parseInt(m[1] || "0", 10);
       const min = parseInt(m[2] || "0", 10);
       const sec = parseInt(m[3] || "0", 10);
-      return h * 3600 + min * 60 + sec;
+      const total = h * 3600 + min * 60 + sec;
+      return total > 0 ? total : null;
     }
 
     function computeHeuristicSignalsForVideo(rawTitle, channelName, durationSec, views, queryLabel, topicId) {
@@ -1205,8 +1207,9 @@ ${JSON.stringify(compactList)}`;
         const d = detailsMap.get(vidId);
         const title = d?.snippet?.title || item.snippet?.title || "YouTube Video";
         const channel = d?.snippet?.channelTitle || item.snippet?.channelTitle || "YouTube Creator";
-        const durationSec = d ? parseIsoDuration(d.contentDetails?.duration) : 720;
-        const views = parseInt(d?.statistics?.viewCount || "125000", 10);
+        const durationSec = d ? parseIsoDuration(d.contentDetails?.duration) : null;
+        const rawViews = d?.statistics?.viewCount ? parseInt(d.statistics.viewCount, 10) : null;
+        const views = Number.isFinite(rawViews) ? rawViews : null;
         const sigs = computeHeuristicSignalsForVideo(title, channel, durationSec, views, categoryLabel, topicId);
         return {
           id: vidId,
@@ -1215,7 +1218,7 @@ ${JSON.stringify(compactList)}`;
           subscribers: views > 1000000 ? "1M+ Reach" : "Indie / Niche",
           views,
           durationSec,
-          durationText: formatDurationSec(durationSec),
+          durationText: durationSec !== null ? formatDurationSec(durationSec) : "Unknown",
           category: categoryLabel,
           topics: [topicId, "live-fetched"],
           ...sigs,
@@ -1233,8 +1236,8 @@ ${JSON.stringify(compactList)}`;
         .slice(0, 12)
         .map(item => {
           const vidId = (item.url || "").split("v=")[1]?.split("&")[0] || "";
-          const durationSec = item.duration > 0 ? item.duration : 680;
-          const views = item.views > 0 ? item.views : 95000;
+          const durationSec = typeof item.duration === "number" && item.duration > 0 ? item.duration : null;
+          const views = typeof item.views === "number" && item.views >= 0 ? item.views : null;
           const sigs = computeHeuristicSignalsForVideo(item.title, item.uploaderName, durationSec, views, categoryLabel, topicId);
           return {
             id: vidId,
@@ -1243,7 +1246,7 @@ ${JSON.stringify(compactList)}`;
             subscribers: item.uploaderVerified ? "Verified" : "Creator",
             views,
             durationSec,
-            durationText: formatDurationSec(durationSec),
+            durationText: durationSec !== null ? formatDurationSec(durationSec) : "Unknown",
             category: categoryLabel,
             topics: [topicId, "live-fetched"],
             ...sigs,
@@ -1262,8 +1265,8 @@ ${JSON.stringify(compactList)}`;
         .slice(0, 12)
         .map(item => {
           const vidId = item.videoId || "";
-          const durationSec = item.lengthSeconds > 0 ? item.lengthSeconds : 680;
-          const views = item.viewCount > 0 ? item.viewCount : 85000;
+          const durationSec = typeof item.lengthSeconds === "number" && item.lengthSeconds > 0 ? item.lengthSeconds : null;
+          const views = typeof item.viewCount === "number" && item.viewCount >= 0 ? item.viewCount : null;
           const sigs = computeHeuristicSignalsForVideo(item.title, item.author, durationSec, views, categoryLabel, topicId);
           return {
             id: vidId,
@@ -1272,7 +1275,7 @@ ${JSON.stringify(compactList)}`;
             subscribers: "Creator",
             views,
             durationSec,
-            durationText: formatDurationSec(durationSec),
+            durationText: durationSec !== null ? formatDurationSec(durationSec) : "Unknown",
             category: categoryLabel,
             topics: [topicId, "live-fetched"],
             ...sigs,
@@ -1305,8 +1308,8 @@ ${JSON.stringify(compactList)}`;
           if (!isValidYoutubeId(vidId)) return null;
           const title = item?.snippet?.title || "YouTube Video";
           const channel = item?.snippet?.channelTitle || "YouTube Creator";
-          const durationSec = 720;
-          const views = 125000;
+          const durationSec = null;
+          const views = null;
           const sigs = computeHeuristicSignalsForVideo(title, channel, durationSec, views, categoryLabel, topicId);
           return {
             id: vidId,
@@ -1315,7 +1318,7 @@ ${JSON.stringify(compactList)}`;
             subscribers: "Creator",
             views,
             durationSec,
-            durationText: formatDurationSec(durationSec),
+            durationText: durationSec !== null ? formatDurationSec(durationSec) : "Unknown",
             category: categoryLabel,
             topics: [topicId, "live-fetched"],
             ...sigs,
